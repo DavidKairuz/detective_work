@@ -1,0 +1,57 @@
+version: "3.9"
+
+services:
+  # Pod 1: Generador de tráfico TCP/UDP
+  traffic-generator:
+    image: alpine:latest
+    container_name: traffic-generator
+    command: >
+      sh -c "
+        apk add --no-cache iperf3 netcat-openbsd;
+        echo '===> Iniciando generador de tráfico';
+        while true; do
+          echo '>>> Enviando tráfico TCP al backend:5000';
+          echo 'pingTCP $(date)' | nc backend 5000 || true;
+          echo '>>> Enviando tráfico UDP al backend:5001';
+          echo 'pingUDP $(date)' | nc -u -w1 backend 5001 || true;
+          sleep 3;
+        done
+      "
+    networks:
+      - net-test
+
+  # Pod 2: Backend receptor de tráfico TCP/UDP
+  backend:
+    image: alpine:latest
+    container_name: backend
+    command: >
+      sh -c "
+        apk add --no-cache busybox-extras netcat-openbsd;
+        echo '===> Backend escuchando en puertos 5000 (TCP) y 5001 (UDP)';
+        nc -lkp 5000 -e echo 'Respuesta TCP del backend' &
+        nc -lukp 5001 -e echo 'Respuesta UDP del backend' &
+        tail -f /dev/null
+      "
+    networks:
+      - net-test
+
+  # Pod 3: Sniffer con ptcpdump (tu Dockerfile)
+  ptcpdump-sniffer:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: ptcpdump-sniffer
+    command: >
+      sh -c "
+        echo '===> Iniciando ptcpdump...';
+        ptcpdump -i any -n host traffic-generator or host backend or port 5000 or port 5001
+      "
+    networks:
+      - net-test
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+
+networks:
+  net-test:
+    driver: bridge
