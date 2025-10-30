@@ -17,7 +17,8 @@ services:
           sleep 3;
         done
       "
-    network_mode: "bridge"
+    networks:
+      - net-test
 
   # 🖥️ Pod 2: Backend receptor de tráfico TCP/UDP
   backend:
@@ -31,7 +32,8 @@ services:
         socat -v UDP-RECVFROM:5001,fork SYSTEM:'printf \"Respuesta UDP del backend\n\"' &
         tail -f /dev/null
       "
-    network_mode: "bridge"
+    networks:
+      - net-test
 
   # 🔍 Pod 3: Sniffer con ptcpdump
   ptcpdump-sniffer:
@@ -69,3 +71,7 @@ services:
     cap_add:
       - NET_ADMIN
       - NET_RAW
+
+networks:
+  net-test:
+    driver: bridge
