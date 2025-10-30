@@ -17,8 +17,7 @@ services:
           sleep 3;
         done
       "
-    networks:
-      - net-test
+    network_mode: "bridge"
 
   # 🖥️ Pod 2: Backend receptor de tráfico TCP/UDP
   backend:
@@ -26,14 +25,13 @@ services:
     container_name: backend
     command: >
       sh -c "
-        apk add --no-cache busybox-extras netcat-openbsd;
+        apk add --no-cache socat;
         echo '===> Backend escuchando en puertos 5000 (TCP) y 5001 (UDP)';
-        nc -lkp 5000 -e echo 'Respuesta TCP del backend' &
-        nc -lukp 5001 -e echo 'Respuesta UDP del backend' &
+        socat -v TCP-LISTEN:5000,reuseaddr,fork SYSTEM:'printf \"Respuesta TCP del backend\n\"' &
+        socat -v UDP-RECVFROM:5001,fork SYSTEM:'printf \"Respuesta UDP del backend\n\"' &
         tail -f /dev/null
       "
-    networks:
-      - net-test
+    network_mode: "bridge"
 
   # 🔍 Pod 3: Sniffer con ptcpdump
   ptcpdump-sniffer:
@@ -41,38 +39,33 @@ services:
       context: .
       dockerfile: Dockerfile
     container_name: ptcpdump-sniffer
+    privileged: true
+    network_mode: "host"
+    entrypoint: ["/bin/sh", "-c"]
     command: >
-      sh -c "
-        mkdir -p /captures && 
-        echo '===> Iniciando ptcpdump (guardando en /captures/ptcpdump_capture.pcap)...';
-        ptcpdump -i any -n -w /captures/ptcpdump_capture.pcap host traffic-generator or host backend or port 5000 or port 5001
-      "
-    networks:
-      - net-test
+      "mkdir -p /captures &&
+      echo '===> Iniciando ptcpdump...' &&
+      /usr/local/bin/ptcpdump -i any -n -w /captures/ptcpdump_capture.pcap"
+    volumes:
+      - ./captures:/captures:rw
+      - /var/run/docker.sock:/var/run/docker.sock
     cap_add:
       - NET_ADMIN
       - NET_RAW
-    volumes:
-      - ./captures:/captures
 
   # 📡 Pod 4: Sniffer con tcpdump estándar
   tcpdump-sniffer:
     image: corfr/tcpdump
     container_name: tcpdump-sniffer
+    privileged: true
+    network_mode: "host"
+    entrypoint: ["/bin/sh", "-c"]
     command: >
-      sh -c "
-        mkdir -p /captures && 
-        echo '===> Iniciando tcpdump (guardando en /captures/tcpdump_capture.pcap)...';
-        tcpdump -i any -n -w /captures/tcpdump_capture.pcap host traffic-generator or host backend or port 5000 or port 5001
-      "
-    networks:
-      - net-test
+      "mkdir -p /captures &&
+      echo '===> Iniciando tcpdump...' &&
+      tcpdump -i any -n -w /captures/tcpdump_capture.pcap"
+    volumes:
+      - ./captures:/captures:rw
     cap_add:
       - NET_ADMIN
       - NET_RAW
-    volumes:
-      - ./captures:/captures
-
-networks:
-  net-test:
-    driver: bridge
