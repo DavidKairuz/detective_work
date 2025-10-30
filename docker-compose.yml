@@ -1,7 +1,7 @@
 version: "3.9"
 
 services:
-  # Pod 1: Generador de tráfico TCP/UDP
+  # 🧩 Pod 1: Generador de tráfico TCP/UDP
   traffic-generator:
     image: alpine:latest
     container_name: traffic-generator
@@ -20,7 +20,7 @@ services:
     networks:
       - net-test
 
-  # Pod 2: Backend receptor de tráfico TCP/UDP
+  # 🖥️ Pod 2: Backend receptor de tráfico TCP/UDP
   backend:
     image: alpine:latest
     container_name: backend
@@ -35,7 +35,7 @@ services:
     networks:
       - net-test
 
-  # Pod 3: Sniffer con ptcpdump (tu Dockerfile)
+  # 🔍 Pod 3: Sniffer con ptcpdump
   ptcpdump-sniffer:
     build:
       context: .
@@ -43,14 +43,35 @@ services:
     container_name: ptcpdump-sniffer
     command: >
       sh -c "
-        echo '===> Iniciando ptcpdump...';
-        ptcpdump -i any -n host traffic-generator or host backend or port 5000 or port 5001
+        mkdir -p /captures && 
+        echo '===> Iniciando ptcpdump (guardando en /captures/ptcpdump_capture.pcap)...';
+        ptcpdump -i any -n -w /captures/ptcpdump_capture.pcap host traffic-generator or host backend or port 5000 or port 5001
       "
     networks:
       - net-test
     cap_add:
       - NET_ADMIN
       - NET_RAW
+    volumes:
+      - ./captures:/captures
+
+  # 📡 Pod 4: Sniffer con tcpdump estándar
+  tcpdump-sniffer:
+    image: corfr/tcpdump
+    container_name: tcpdump-sniffer
+    command: >
+      sh -c "
+        mkdir -p /captures && 
+        echo '===> Iniciando tcpdump (guardando en /captures/tcpdump_capture.pcap)...';
+        tcpdump -i any -n -w /captures/tcpdump_capture.pcap host traffic-generator or host backend or port 5000 or port 5001
+      "
+    networks:
+      - net-test
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+    volumes:
+      - ./captures:/captures
 
 networks:
   net-test:
