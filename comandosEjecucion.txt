@@ -4,3 +4,42 @@
 
 # Comando de ejecucion con paso de parametro de tiempo en segundos
 ./run_capture.sh 30
+
+
+chmod +x run_capture.sh
+./run_capture.sh
+
+
+Ejecución paralela de tcpdump y ptcpdump:
+
+Se ejecutan ambas herramientas simultáneamente para capturar el mismo tráfico
+Esto permite comparar los resultados entre ambas herramientas
+
+docker exec sniffer sh -c "tcpdump -i any -w /captures/tcpdump_capture.pcap" >/dev/null 2>&1 &
+docker exec sniffer sh -c "ptcpdump -i any -w /captures/ptcpdump_capture.pcap" >/dev/null 2>&1 &
+
+Los warnings son porque ptcpdump intenta integrar con diferentes runtime containers (Docker, Containerd, CRI-O, Kubernetes) para obtener metadata adicional de los contenedores, pero no puede conectarse a ellos. Esto es esperado porque:
+
+No todos los sistemas tienen containerd
+No todos tienen Kubernetes
+Los sockets de algunos servicios no están montados o accesibles
+Lo importante es que después de esos warnings, ves:
+
+tcpdump-sniffer   | tcpdump: listening on any, link-type LINUX_SLL (Linux cooked), capture size 262144 bytes
+
+Si quieres eliminar esos warnings, podemos:
+
+Modificar el comando de ptcpdump para deshabilitar la integración con contenedores:
+
+  ptcpdump-sniffer:
+    # ... resto de la configuración ...
+    command: >
+      "mkdir -p /captures &&
+      echo '===> Iniciando ptcpdump...' &&
+      /usr/local/bin/ptcpdump -i any -n -p -w /captures/ptcpdump_capture.pcap --no-containers"
+
+      O simplemente podemos ignorar los warnings ya que:
+
+No afectan la funcionalidad de captura
+Solo indican que algunas características opcionales no están disponibles
+La captura de paquetes funciona normalmente

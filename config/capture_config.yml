@@ -1,0 +1,17 @@
+# Configuración de captura de paquetes
+tcpdump:
+  interface: any
+  filter: "tcp port 5000 or port 5001"
+  output: "/captures/tcpdump_capture.pcap"
+  options: "-s 1500"  # Tamaño máximo de paquete
+
+ptcpdump:
+  interface: any
+  filter: "tcp port 5000 or port 5001"
+  output: "/captures/ptcpdump_capture.pcap"
+  options: ""  # Opciones adicionales si son necesarias
+
+# Configuración general
+capture:
+  default_duration: 60  # segundos
+  capture_dir: "./captures"
