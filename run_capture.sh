@@ -1,58 +1,79 @@
 #!/bin/bash
 # ==============================================
-# Script: run_capture.sh
-# Autor: David Elias Kairuz (adaptado por GPT-5)
-# Descripción:
-#   Automatiza la ejecución del entorno de prueba
-#   con tráfico TCP/UDP, tcpdump y ptcpdump.
+# Script: run_capture.sh (Versión Simplificada)
+# Descripción: Ejecuta capturas con tcpdump y ptcpdump
 # ==============================================
 
-# Configuración
+# Colores para mejor legibilidad
+BLUE='\033[1;34m'
+GREEN='\033[1;32m'
+RED='\033[1;31m'
+NC='\033[0m'
+
+# Configuración básica
 CAPTURE_DIR="./captures"
-CAPTURE_TIME=${1:-60}   # segundos (puede pasarse como argumento)
+CAPTURE_TIME=${1:-60}
 COMPOSE_FILE="docker-compose.yml"
 
-echo "🚀 Iniciando captura de tráfico (duración: ${CAPTURE_TIME}s)..."
+echo -e "${BLUE}🚀 Iniciando entorno con captura real (duración: ${CAPTURE_TIME}s)...${NC}"
 
-# 1. Limpiar capturas previas
-# Reemplaza la sección de limpieza de capturas por esto:
-echo -e "${BLUE}📁 Preparando directorio de capturas...${NC}"
-rm -rf "$CAPTURE_DIR"
-mkdir -p "$CAPTURE_DIR"
-if groups | grep -q docker; then
-    chown $USER:docker "$CAPTURE_DIR"
-else
-    echo -e "${RED}⚠️  Advertencia: Usuario no está en el grupo docker${NC}"
-    echo -e "${BLUE}ℹ️  Configurando permisos alternativos...${NC}"
-fi
-chmod 775 "$CAPTURE_DIR"
+# 1. Preparar directorio con permisos correctos
+echo -e "${BLUE}📁 Preparando directorio...${NC}"
+sudo rm -rf "$CAPTURE_DIR"
+sudo mkdir -p "$CAPTURE_DIR"
+sudo chmod 777 "$CAPTURE_DIR"
 
-# 2. Construir y levantar contenedores
-echo "🐳 Levantando contenedores..."
-docker compose -f "$COMPOSE_FILE" up --build -d
-# Añadir después de levantar los contenedores:
-echo -e "${BLUE}🔍 Verificando estado de contenedores...${NC}"
-if ! docker compose -f "$COMPOSE_FILE" ps | grep -q "running"; then
-    echo -e "${RED}❌ Error: Los contenedores no están ejecutándose${NC}"
+# 2. Levantar contenedores
+echo -e "${BLUE}🐳 Iniciando contenedores...${NC}"
+docker compose -f "$COMPOSE_FILE" up -d
+sleep 5  # Esperar a que los contenedores estén listos
+
+# 3. Verificar que los contenedores sniffer están activos
+if ! docker ps | grep -q "tcpdump-sniffer" || ! docker ps | grep -q "ptcpdump-sniffer"; then
+    echo -e "${RED}❌ Error: Uno o ambos contenedores sniffer no están activos${NC}"
     docker compose -f "$COMPOSE_FILE" logs
     exit 1
 fi
+echo -e "${GREEN}✅ Contenedores activos.${NC}"
 
-# 3. Esperar mientras se genera tráfico
-echo "⏱️ Esperando ${CAPTURE_TIME}s mientras se genera tráfico..."
+# 4. Iniciar capturas (versión simplificada y probada)
+echo -e "${BLUE}📷 Iniciando capturas...${NC}"
+
+# Iniciar tcpdump
+docker exec tcpdump-sniffer tcpdump -i any -w /captures/tcpdump_capture.pcap &
+sleep 2  # Pequeña pausa entre capturas
+
+# Iniciar ptcpdump
+docker exec ptcpdump-sniffer ptcpdump -i any -w /captures/ptcpdump_capture.pcap &
+sleep 2  # Asegurar que ambas capturas han iniciado
+
+echo -e "${GREEN}✅ Capturas iniciadas dentro del contenedor 'sniffer'.${NC}"
+
+echo -e "${GREEN}✅ Capturas iniciadas${NC}"
+
+# 5. Esperar el tiempo especificado
+echo -e "${BLUE}⏱️ Capturando durante ${CAPTURE_TIME}s...${NC}"
 sleep "$CAPTURE_TIME"
 
-# 4. Detener contenedores
-echo "🛑 Deteniendo contenedores..."
+# 6. Detener capturas de manera segura
+echo -e "${BLUE}🛑 Finalizando capturas...${NC}"
+docker exec tcpdump-sniffer killall -2 tcpdump
+docker exec ptcpdump-sniffer killall -2 ptcpdump
+sleep 2  # Dar tiempo para que las capturas se guarden
+
+# 7. Detener contenedores
+echo -e "${BLUE}� Deteniendo contenedores...${NC}"
 docker compose -f "$COMPOSE_FILE" down
 
-# 5. Mostrar resumen de archivos capturados
-echo "📂 Archivos capturados:"
-ls -lh "$CAPTURE_DIR" || echo "❌ No se encontraron capturas."
+# 8. Verificar resultados
+echo -e "${BLUE}� Verificando capturas:${NC}"
+if [ -f "$CAPTURE_DIR/tcpdump_capture.pcap" ] && [ -f "$CAPTURE_DIR/ptcpdump_capture.pcap" ]; then
+    echo -e "${GREEN}✅ Capturas completadas exitosamente:${NC}"
+    ls -lh "$CAPTURE_DIR"/*.pcap
+else
+    echo -e "${RED}❌ Error: No se encontraron algunas capturas${NC}"
+    ls -l "$CAPTURE_DIR" || true
+fi
 
-# 6. Mensaje final
-echo "✅ Captura completada. Archivos disponibles en: ${CAPTURE_DIR}/"
-echo "   - ptcpdump_capture.pcap"
-echo "   - tcpdump_capture.pcap"
-echo ""
-echo "💡 Abrilos con Wireshark o tshark para comparar resultados."
+echo -e "\n💾 Las capturas están en: ${CAPTURE_DIR}/"
+echo -e "   Puedes analizarlas con: wireshark $CAPTURE_DIR/*.pcap"

@@ -1,0 +1,6 @@
+# comando para la ejecucion del docker compose con sh
+./run_capture.sh
+
+
+# Comando de ejecucion con paso de parametro de tiempo en segundos
+./run_capture.sh 30
