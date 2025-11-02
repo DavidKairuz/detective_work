@@ -36,37 +36,40 @@ if ! docker ps | grep -q "tcpdump-sniffer" || ! docker ps | grep -q "ptcpdump-sn
 fi
 echo -e "${GREEN}✅ Contenedores activos.${NC}"
 
-# 4. Iniciar capturas (versión simplificada y probada)
-echo -e "${BLUE}📷 Iniciando capturas...${NC}"
+# 4. Capturas gestionadas por docker-compose (evitar duplicación)
+echo -e "${BLUE}📷 Las capturas ya están iniciadas por docker-compose (comandos parametrizados en .env).${NC}"
+echo -e "${GREEN}✅ Servicios sniffer corriendo con: TCPDUMP_CMD y PTCPDUMP_CMD.${NC}"
 
-# Iniciar tcpdump
-docker exec tcpdump-sniffer tcpdump -i any -w /captures/tcpdump_capture.pcap &
-sleep 2  # Pequeña pausa entre capturas
-
-# Iniciar ptcpdump
-docker exec ptcpdump-sniffer ptcpdump -i any -w /captures/ptcpdump_capture.pcap &
-sleep 2  # Asegurar que ambas capturas han iniciado
-
-echo -e "${GREEN}✅ Capturas iniciadas dentro del contenedor 'sniffer'.${NC}"
-
-echo -e "${GREEN}✅ Capturas iniciadas${NC}"
+# 5. Iniciar monitoreo de CPU/memoria (si 'sar' está disponible)
+if command -v sar >/dev/null 2>&1; then
+    echo -e "${BLUE}📊 Registrando métricas de CPU y memoria durante ${CAPTURE_TIME}s...${NC}"
+    sar -u 1 ${CAPTURE_TIME} > ${CAPTURE_DIR}/cpu_usage.txt &
+    CPU_SAR_PID=$!
+    sar -r 1 ${CAPTURE_TIME} > ${CAPTURE_DIR}/mem_usage.txt &
+    MEM_SAR_PID=$!
+else
+    echo -e "⚠️  'sar' no está disponible. Instala 'sysstat' para habilitar métricas (sudo apt-get install -y sysstat)."
+fi
 
 # 5. Esperar el tiempo especificado
 echo -e "${BLUE}⏱️ Capturando durante ${CAPTURE_TIME}s...${NC}"
 sleep "$CAPTURE_TIME"
 
-# 6. Detener capturas de manera segura
-echo -e "${BLUE}🛑 Finalizando capturas...${NC}"
-docker exec tcpdump-sniffer killall -2 tcpdump
-docker exec ptcpdump-sniffer killall -2 ptcpdump
-sleep 2  # Dar tiempo para que las capturas se guarden
+# 6. Detener capturas con parada limpia (flush de .pcap)
+echo -e "${BLUE}🛑 Finalizando capturas (stop con gracia)...${NC}"
+docker compose -f "$COMPOSE_FILE" stop -t 5
+sleep 2
 
-# 7. Detener contenedores
-echo -e "${BLUE}� Deteniendo contenedores...${NC}"
+# 7. Finalizar métricas si siguen activas
+if [ -n "${CPU_SAR_PID:-}" ]; then kill ${CPU_SAR_PID} 2>/dev/null || true; fi
+if [ -n "${MEM_SAR_PID:-}" ]; then kill ${MEM_SAR_PID} 2>/dev/null || true; fi
+
+# 8. Remover contenedores
+echo -e "${BLUE}📦 Removiendo contenedores...${NC}"
 docker compose -f "$COMPOSE_FILE" down
 
-# 8. Verificar resultados
-echo -e "${BLUE}� Verificando capturas:${NC}"
+# 9. Verificar resultados
+echo -e "${BLUE}🔍 Verificando capturas:${NC}"
 if [ -f "$CAPTURE_DIR/tcpdump_capture.pcap" ] && [ -f "$CAPTURE_DIR/ptcpdump_capture.pcap" ]; then
     echo -e "${GREEN}✅ Capturas completadas exitosamente:${NC}"
     ls -lh "$CAPTURE_DIR"/*.pcap

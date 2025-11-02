@@ -47,10 +47,10 @@ services:
     command: >
       "mkdir -p /captures &&
       echo '===> Iniciando ptcpdump...' &&
-      /usr/local/bin/ptcpdump -i any -n -w /captures/ptcpdump_capture.pcap"
+      ${PTCPDUMP_CMD}"
     volumes:
       - ./captures:/captures:rw
-      - /var/run/docker.sock:/var/run/docker.sock
+      - /var/run/docker.sock:/var/run/docker.sock:ro
     cap_add:
       - NET_ADMIN
       - NET_RAW
@@ -65,7 +65,7 @@ services:
     command: >
       "mkdir -p /captures &&
       echo '===> Iniciando tcpdump...' &&
-      tcpdump -i any -n -w /captures/tcpdump_capture.pcap"
+      ${TCPDUMP_CMD}"
     volumes:
       - ./captures:/captures:rw
     cap_add:
