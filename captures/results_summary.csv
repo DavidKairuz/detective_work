@@ -1,3 +1,0 @@
-metric,packets_total,bytes_netos,pcap_size_kb,cpu_user_avg,cpu_system_avg,mem_used_pct_avg,mem_used_mb_avg,mem_total_mb_avg
-tcpdump,774,53760,64.62,1.60,0.68,26.38,4091.90,10639.49
-ptcpdump,768,51840,62.65,1.60,0.68,26.38,4091.90,10639.49
