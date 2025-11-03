@@ -1,1 +1,5 @@
 /captures/.*
+*.txt
+*.png
+*.pcap
+*.csv
