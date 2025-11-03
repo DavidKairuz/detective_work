@@ -3,3 +3,5 @@
 *.png
 *.pcap
 *.csv
+captures/tcpdump_capture.pcapng
+captures/ptcpdump_capture.pcapng

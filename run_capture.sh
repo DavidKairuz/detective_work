@@ -16,6 +16,9 @@ CAPTURE_TIME=${1:-60}
 COMPOSE_FILE="docker-compose.yml"
 PROFILE_FILE="${2:-}"
 
+# Define la ruta al script de Python
+PYTHON_SCRIPT="analyze_integrated_results.py"
+
 # Si se pasa un archivo de perfil (.env), úsalo para parametrizar comandos de sniffers
 declare -a COMPOSE_ENV_ARGS=()
 if [ -n "$PROFILE_FILE" ]; then
@@ -129,3 +132,15 @@ fi
 
 echo -e "\n💾 Las capturas están en: ${CAPTURE_DIR}/"
 echo -e "   Puedes analizarlas con: wireshark $CAPTURE_DIR/*.pcap o *.pcapng"
+
+sleep 2
+echo "Ejecutando script Python 3..."
+
+# Ejecución directa
+python3 "$PYTHON_SCRIPT"
+
+# Puedes capturar el código de salida (exit code) si lo necesitas
+EXIT_CODE=$?
+if [ $EXIT_CODE -ne 0 ]; then
+    echo "El script de Python falló con código de salida: $EXIT_CODE"
+fi
