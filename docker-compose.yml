@@ -1,4 +1,4 @@
-version: "3.9"
+#version: "3.9"
 
 services:
   # 🧩 Pod 1: Generador de tráfico TCP/UDP

@@ -43,3 +43,6 @@ Modificar el comando de ptcpdump para deshabilitar la integración con contenedo
 No afectan la funcionalidad de captura
 Solo indican que algunas características opcionales no están disponibles
 La captura de paquetes funciona normalmente
+
+
+docker stats ptcpdump-sniffer tcpdump-sniffer //visualizacion del consumo de cpu y memoria en contenedores

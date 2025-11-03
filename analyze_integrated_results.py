@@ -13,13 +13,30 @@ import matplotlib.pyplot as plt
 import subprocess
 import sys
 import re
+from typing import Optional
 
 # Rutas de los archivos generados por la captura
 CAPTURE_DIR = "./captures"
 CPU_FILE = os.path.join(CAPTURE_DIR, "cpu_usage.txt")
 MEM_FILE = os.path.join(CAPTURE_DIR, "mem_usage.txt")
-PCAP_TCPDUMP = os.path.join(CAPTURE_DIR, "tcpdump_capture.pcap")
-PCAP_PTCPDUMP = os.path.join(CAPTURE_DIR, "ptcpdump_capture.pcap")
+
+# Permitir .pcap, .pcapng y .pcap.ng
+def resolve_capture_path(base_name: str) -> Optional[str]:
+    """Dada una base (sin extensión) retorna el primer archivo existente
+    en el orden de preferencia: .pcap, .pcapng, .pcap.ng. Devuelve None si no existe.
+    """
+    candidates = [
+        os.path.join(CAPTURE_DIR, f"{base_name}.pcap"),
+        os.path.join(CAPTURE_DIR, f"{base_name}.pcapng"),
+        os.path.join(CAPTURE_DIR, f"{base_name}.pcap.ng"),
+    ]
+    for path in candidates:
+        if os.path.exists(path):
+            return path
+    return None
+
+PCAP_TCPDUMP = resolve_capture_path("tcpdump_capture")
+PCAP_PTCPDUMP = resolve_capture_path("ptcpdump_capture")
 
 print("🔍 Iniciando análisis de métricas integradas...")
 
@@ -28,7 +45,18 @@ print("🔍 Iniciando análisis de métricas integradas...")
 # =====================================
 def check_prerequisites():
     """Verifica la existencia de archivos y la herramienta tshark."""
-    required_files = [CPU_FILE, MEM_FILE, PCAP_TCPDUMP, PCAP_PTCPDUMP]
+    # Resolver pcaps si no estaban resueltos aún
+    global PCAP_TCPDUMP, PCAP_PTCPDUMP
+    if PCAP_TCPDUMP is None:
+        PCAP_TCPDUMP = resolve_capture_path("tcpdump_capture")
+    if PCAP_PTCPDUMP is None:
+        PCAP_PTCPDUMP = resolve_capture_path("ptcpdump_capture")
+
+    required_files = [CPU_FILE, MEM_FILE]
+    if PCAP_TCPDUMP:
+        required_files.append(PCAP_TCPDUMP)
+    if PCAP_PTCPDUMP:
+        required_files.append(PCAP_PTCPDUMP)
     
     # 1. Verificar archivos
     for file in required_files:
@@ -133,33 +161,46 @@ def get_tshark_stats(pcap_file):
 def main():
     check_prerequisites()
     
+    # Mostrar qué archivos de captura se usarán
+    print("\n📁 Archivos de captura detectados:")
+    print(f" - tcpdump: {PCAP_TCPDUMP if PCAP_TCPDUMP else 'no encontrado'}")
+    print(f" - ptcpdump: {PCAP_PTCPDUMP if PCAP_PTCPDUMP else 'no encontrado'}")
+
     # 1. Métricas de Sistema
     cpu_data, mem_data, cpu_mean, mem_mean = analyze_system_metrics()
 
     # 2. Métricas de Tráfico
-    tshark_tcpdump = get_tshark_stats(PCAP_TCPDUMP)
-    tshark_ptcpdump = get_tshark_stats(PCAP_PTCPDUMP)
+    tshark_tcpdump = get_tshark_stats(PCAP_TCPDUMP) if PCAP_TCPDUMP else {"packets": 0, "bytes": 0}
+    tshark_ptcpdump = get_tshark_stats(PCAP_PTCPDUMP) if PCAP_PTCPDUMP else {"packets": 0, "bytes": 0}
     
     # 3. Tamaños de archivo
-    size_tcpdump = os.path.getsize(PCAP_TCPDUMP)
-    size_ptcpdump = os.path.getsize(PCAP_PTCPDUMP)
+    size_tcpdump = os.path.getsize(PCAP_TCPDUMP) if PCAP_TCPDUMP else 0
+    size_ptcpdump = os.path.getsize(PCAP_PTCPDUMP) if PCAP_PTCPDUMP else 0
 
     # 4. Consolidación y Visualización de Resultados
     print("\n===== RESULTADOS INTEGRADOS Y COMPARATIVOS =====")
 
     # --- Tabla de Métricas de Tráfico y Metadatos ---
     print("\n📊 4.1. Comparativa de Tráfico Capturado y Carga (Metadatos):")
-    traffic_data = {
-        "Herramienta": ["tcpdump", "ptcpdump"],
-        "Paquetes Total": [tshark_tcpdump['packets'], tshark_ptcpdump['packets']],
-        "Bytes Netos (Payload)": [tshark_tcpdump['bytes'], tshark_ptcpdump['bytes']],
-        "Tamaño Archivo (KB)": [size_tcpdump / 1024, size_ptcpdump / 1024]
-    }
+    traffic_rows = []
+    traffic_rows.append({
+        "Herramienta": "tcpdump",
+        "Paquetes Total": tshark_tcpdump['packets'],
+        "Bytes Netos (Payload)": tshark_tcpdump['bytes'],
+        "Tamaño Archivo (KB)": size_tcpdump / 1024,
+    })
+    traffic_rows.append({
+        "Herramienta": "ptcpdump",
+        "Paquetes Total": tshark_ptcpdump['packets'],
+        "Bytes Netos (Payload)": tshark_ptcpdump['bytes'],
+        "Tamaño Archivo (KB)": size_ptcpdump / 1024,
+    })
+    traffic_data = {k: [row[k] for row in traffic_rows] for k in traffic_rows[0].keys()}
     traffic_df = pd.DataFrame(traffic_data)
     print(traffic_df.to_string(index=False, float_format="%.2f"))
 
     # Conclusión sobre metadatos
-    if tshark_ptcpdump['packets'] > 0:
+    if tshark_ptcpdump['packets'] > 0 and tshark_tcpdump['packets'] > 0:
         if tshark_ptcpdump['packets'] == tshark_tcpdump['packets']:
             if size_ptcpdump > size_tcpdump:
                 diff_kb = (size_ptcpdump - size_tcpdump) / 1024
@@ -170,8 +211,13 @@ def main():
                 print("   Ambas capturas tienen el mismo número de paquetes, pero ptcpdump es más pequeño/similar, lo que puede deberse a la eficiencia del formato .pcapng.")
         else:
              print("\n⚠️ ALERTA: Diferencia en el conteo de paquetes. ptcpdump tiene capacidad para capturar paquetes que tcpdump podría perder en interfaces virtuales.")
-    else:
+    elif tshark_ptcpdump['packets'] == 0 and tshark_tcpdump['packets'] == 0:
         print("\n⚠️ ALERTA: No se detectaron paquetes de red en la captura. Revise la ejecución de Docker Compose o los comandos de captura.")
+    # Si solo uno existe, evitar conclusiones comparativas fuertes
+    elif tshark_ptcpdump['packets'] == 0:
+        print("\nℹ️ Solo se encontraron datos para tcpdump; ptcpdump no está disponible o no contiene paquetes.")
+    elif tshark_tcpdump['packets'] == 0:
+        print("\nℹ️ Solo se encontraron datos para ptcpdump; tcpdump no está disponible o no contiene paquetes.")
 
 
     # --- Promedio de Uso de Recursos ---
@@ -231,7 +277,7 @@ def main():
         "metric": ["tcpdump", "ptcpdump"],
         "packets_total": [tshark_tcpdump['packets'], tshark_ptcpdump['packets']],
         "bytes_netos": [tshark_tcpdump['bytes'], tshark_ptcpdump['bytes']],
-        "pcap_size_kb": [size_tcpdump / 1024, size_ptcpdump / 1024]
+        "pcap_size_kb": [size_tcpdump / 1024, size_ptcpdump / 1024],
     }
     df_summary = pd.DataFrame(results_summary)
     
