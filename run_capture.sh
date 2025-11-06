@@ -31,7 +31,7 @@ if ! docker network inspect ptcp_docker_net-test >/dev/null 2>&1; then
     docker network create --driver bridge --subnet 172.18.0.0/16 ptcp_docker_net-test >/dev/null 2>&1 || true
 fi
 docker compose -f "$COMPOSE_FILE" up -d
-sleep 5  # Esperar a que los contenedores estén listos
+sleep 2  # Esperar a que los contenedores estén listos
 
 # 3. Verificar que los contenedores sniffer están activos
 if ! docker ps | grep -q "tcpdump-sniffer" || ! docker ps | grep -q "ptcpdump-sniffer"; then
@@ -44,6 +44,15 @@ echo -e "${GREEN}✅ Contenedores activos.${NC}"
 # 4. Capturas gestionadas por docker-compose (evitar duplicación)
 echo -e "${BLUE}📷 Las capturas ya están iniciadas por docker-compose (comandos parametrizados en .env).${NC}"
 echo -e "${GREEN}✅ Servicios sniffer corriendo con: TCPDUMP_CMD y PTCPDUMP_CMD.${NC}"
+
+# Asegurar que los archivos de captura estén siendo escritos
+echo -e "${BLUE}⏳ Esperando a que las capturas inicien...${NC}"
+for i in {1..10}; do
+    if [ -f "$CAPTURE_DIR/tcpdump_capture.pcap" ] && [ -f "$CAPTURE_DIR/ptcpdump_capture.pcap" ]; then
+        break
+    fi
+    sleep 0.5
+done
 
 # 4.1. Recolección de métricas por contenedor (docker stats) en segundo plano
 if [ ! -d "./scripts" ]; then mkdir -p ./scripts; fi
@@ -66,14 +75,26 @@ else
     echo -e "⚠️  'sar' no está disponible. Instala 'sysstat' para habilitar métricas (sudo apt-get install -y sysstat)."
 fi
 
-# 5. Esperar el tiempo especificado
-echo -e "${BLUE}⏱️ Capturando durante ${CAPTURE_TIME}s...${NC}"
-sleep "$CAPTURE_TIME"
+# 5. Esperar el tiempo exacto especificado
+date +%s.%N > "$CAPTURE_DIR/capture_start_time"
+echo -e "${BLUE}⏱️ Iniciando captura de ${CAPTURE_TIME}s...${NC}"
+
+# Esperar el tiempo exacto usando un bucle de control
+SECONDS=0
+while [ $SECONDS -lt $CAPTURE_TIME ]; do
+    REMAINING=$((CAPTURE_TIME - SECONDS))
+    echo -ne "\r${BLUE}⏱️ Capturando... ${REMAINING}s restantes${NC}"
+    sleep 1
+done
+echo  # Nueva línea después del contador
+
+# Registrar tiempo final exacto
+date +%s.%N > "$CAPTURE_DIR/capture_end_time"
 
 # 6. Detener capturas con parada limpia (flush de .pcap)
 echo -e "${BLUE}🛑 Finalizando capturas (stop con gracia)...${NC}"
-docker compose -f "$COMPOSE_FILE" stop -t 5
-sleep 2
+docker compose -f "$COMPOSE_FILE" stop -t 3
+sleep 1
 
 # 7. Finalizar métricas si siguen activas
 if [ -n "${CPU_SAR_PID:-}" ]; then kill ${CPU_SAR_PID} 2>/dev/null || true; fi

@@ -154,34 +154,27 @@ def get_tshark_stats(pcap_file):
 # 2.b Duración de captura (capinfos) y tasas
 # =====================================
 def get_capture_duration(pcap_file):
-    """Usa capinfos para obtener duración de captura en segundos (locale-agnostic)."""
+    """Obtiene la duración real de la captura usando los timestamps guardados."""
+    capture_dir = os.path.dirname(pcap_file)
     try:
-        cmd = f"LC_ALL=C capinfos -a {pcap_file}"
-        res = subprocess.run(cmd, shell=True, capture_output=True, text=True, check=True)
-        for line in res.stdout.splitlines():
-            if 'Capture duration' in line:
-                # Ej: Capture duration: 67.208992 seconds
-                num = line.split(':',1)[1].strip().split()[0]
-                num = num.replace(',','.')
-                return float(num)
-    except Exception:
-        pass
-    # Fallback con tshark: io,stat,0 contiene 'Duration: X secs'
-    try:
-        cmd = f"tshark -r {pcap_file} -q -z io,stat,0"
-        res = subprocess.run(cmd, shell=True, capture_output=True, text=True, check=True)
-        for line in res.stdout.splitlines():
-            if 'Duration:' in line and 'secs' in line:
-                parts = line.strip().split()
-                # Buscar el número anterior a 'secs'
-                for i, tok in enumerate(parts):
-                    if tok.startswith('secs') and i>0:
-                        try:
-                            return float(parts[i-1].replace(',','.'))
-                        except Exception:
-                            break
-    except Exception:
-        pass
+        with open(os.path.join(capture_dir, 'capture_start_time'), 'r') as f:
+            start_time = float(f.read().strip())
+        with open(os.path.join(capture_dir, 'capture_end_time'), 'r') as f:
+            end_time = float(f.read().strip())
+        duration = end_time - start_time
+        return round(duration, 2)
+    except (FileNotFoundError, ValueError) as e:
+        print(f"⚠️  No se pudieron leer los timestamps de captura: {e}")
+        # Fallback a capinfos
+        try:
+            output = subprocess.check_output(
+                f"capinfos {pcap_file}", shell=True, text=True)
+            for line in output.splitlines():
+                if 'Capture duration' in line:
+                    duration = float(line.split(':')[1].strip().split()[0])
+                    return round(duration, 2)
+        except subprocess.CalledProcessError:
+            return 0.0
     return 0.0
 
 # =====================================
