@@ -252,6 +252,24 @@ def main():
             "Memoria Promedio (%)": [tcp_avg.get("mem_avg", 0.0), ptcp_avg.get("mem_avg", 0.0)],
         })
         print(cont_df.to_string(index=False, float_format="%.2f"))
+
+        # Grafico combinado de recursos promedio (CPU/Mem) por herramienta
+        labels = ["tcpdump", "ptcpdump"]
+        cpu_vals = [tcp_avg.get("cpu_avg", 0.0), ptcp_avg.get("cpu_avg", 0.0)]
+        mem_vals = [tcp_avg.get("mem_avg", 0.0), ptcp_avg.get("mem_avg", 0.0)]
+        x = [0, 1]
+        width = 0.35
+        plt.figure(figsize=(6,5))
+        plt.bar([xi - width/2 for xi in x], cpu_vals, width=width, label="CPU", color="#4e79a7")
+        plt.bar([xi + width/2 for xi in x], mem_vals, width=width, label="Memoria", color="#f28e2c")
+        plt.xticks(x, labels)
+        plt.ylabel("Uso Promedio (%)")
+        plt.xlabel("Herramienta")
+        plt.title("Promedio de Recursos: tcpdump vs. ptcpdump")
+        plt.legend(title="Métrica")
+        plt.tight_layout()
+        plt.savefig(os.path.join(CAPTURE_DIR, "resources_avg_grouped.png"))
+        plt.close()
     else:
         print("ℹ️  No se encontraron CSVs de docker stats; ejecuta scripts/collect_metrics.sh durante la captura.")
 
@@ -292,6 +310,37 @@ def main():
         plt.tight_layout()
         plt.savefig(os.path.join(CAPTURE_DIR, "mem_container_avg.png"))
         plt.close()
+
+    # Series temporales CPU/Mem por contenedor
+    if tcp_df is not None and ptcp_df is not None:
+        if not (tcp_df.empty or ptcp_df.empty):
+            # CPU
+            plt.figure(figsize=(8,4))
+            if 'time_s' in tcp_df.columns and 'cpu_perc' in tcp_df.columns:
+                plt.plot(tcp_df['time_s'], tcp_df['cpu_perc'], label='tcpdump CPU %', color='gray')
+            if 'time_s' in ptcp_df.columns and 'cpu_perc' in ptcp_df.columns:
+                plt.plot(ptcp_df['time_s'], ptcp_df['cpu_perc'], label='ptcpdump CPU %', color='blue')
+            plt.xlabel('Tiempo (s)')
+            plt.ylabel('Uso de CPU (%)')
+            plt.title('Uso de CPU: Comparativa entre Contenedores Sniffer')
+            plt.legend()
+            plt.tight_layout()
+            plt.savefig(os.path.join(CAPTURE_DIR, 'cpu_timeseries.png'))
+            plt.close()
+
+            # Memoria
+            plt.figure(figsize=(8,4))
+            if 'time_s' in tcp_df.columns and 'mem_perc' in tcp_df.columns:
+                plt.plot(tcp_df['time_s'], tcp_df['mem_perc'], label='tcpdump Memoria %', color='gray')
+            if 'time_s' in ptcp_df.columns and 'mem_perc' in ptcp_df.columns:
+                plt.plot(ptcp_df['time_s'], ptcp_df['mem_perc'], label='ptcpdump Memoria %', color='blue')
+            plt.xlabel('Tiempo (s)')
+            plt.ylabel('Uso de Memoria (%)')
+            plt.title('Uso de Memoria: Comparativa entre Contenedores Sniffer')
+            plt.legend()
+            plt.tight_layout()
+            plt.savefig(os.path.join(CAPTURE_DIR, 'mem_timeseries.png'))
+            plt.close()
 
     # CPU usage over time
     if not cpu_data.empty:
