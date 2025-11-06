@@ -25,6 +25,11 @@ sudo chmod 777 "$CAPTURE_DIR"
 
 # 2. Levantar contenedores
 echo -e "${BLUE}🐳 Iniciando contenedores...${NC}"
+# Asegurar que la red externa exista (como la espera docker-compose.yml)
+if ! docker network inspect ptcp_docker_net-test >/dev/null 2>&1; then
+    echo -e "${BLUE}🌐 Creando red externa ptcp_docker_net-test...${NC}"
+    docker network create --driver bridge --subnet 172.18.0.0/16 ptcp_docker_net-test >/dev/null 2>&1 || true
+fi
 docker compose -f "$COMPOSE_FILE" up -d
 sleep 5  # Esperar a que los contenedores estén listos
 
@@ -39,6 +44,16 @@ echo -e "${GREEN}✅ Contenedores activos.${NC}"
 # 4. Capturas gestionadas por docker-compose (evitar duplicación)
 echo -e "${BLUE}📷 Las capturas ya están iniciadas por docker-compose (comandos parametrizados en .env).${NC}"
 echo -e "${GREEN}✅ Servicios sniffer corriendo con: TCPDUMP_CMD y PTCPDUMP_CMD.${NC}"
+
+# 4.1. Recolección de métricas por contenedor (docker stats) en segundo plano
+if [ ! -d "./scripts" ]; then mkdir -p ./scripts; fi
+if [ ! -x "./scripts/collect_metrics.sh" ] && [ -f "./scripts/collect_metrics.sh" ]; then chmod +x ./scripts/collect_metrics.sh; fi
+if [ -x "./scripts/collect_metrics.sh" ]; then
+    echo -e "${BLUE}📊 Iniciando recolección de métricas por contenedor...${NC}"
+    ./scripts/collect_metrics.sh "$CAPTURE_TIME" "$CAPTURE_DIR" >/dev/null 2>&1 &
+else
+    echo -e "ℹ️  No se encontró scripts/collect_metrics.sh; omitiendo métricas por contenedor."
+fi
 
 # 5. Iniciar monitoreo de CPU/memoria (si 'sar' está disponible)
 if command -v sar >/dev/null 2>&1; then
@@ -80,3 +95,16 @@ fi
 
 echo -e "\n💾 Las capturas están en: ${CAPTURE_DIR}/"
 echo -e "   Puedes analizarlas con: wireshark $CAPTURE_DIR/*.pcap"
+
+# 10. Ejecutar analizador integrado (tshark + métricas) si está disponible
+PY_ANALYZER="analyze_integrated_results.py"
+if [ -f "$PY_ANALYZER" ]; then
+    echo "\n🔎 Ejecutando analizador (tshark + gráficos)..."
+    if command -v python3 >/dev/null 2>&1; then
+        python3 "$PY_ANALYZER" || echo "⚠️  El analizador terminó con error, revisa dependencias (pandas/matplotlib/tshark) y archivos en ${CAPTURE_DIR}."
+    else
+        echo "⚠️  Python 3 no encontrado; omitiendo análisis automático."
+    fi
+else
+    echo "ℹ️  Analizador no encontrado (${PY_ANALYZER})."
+fi

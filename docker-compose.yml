@@ -1,4 +1,4 @@
-version: "3.9"
+#version: "3.9"
 
 services:
   # 🧩 Pod 1: Generador de tráfico TCP/UDP
@@ -74,4 +74,6 @@ services:
 
 networks:
   net-test:
+    external: true
+    name: ptcp_docker_net-test
     driver: bridge

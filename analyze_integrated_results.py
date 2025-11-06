@@ -21,28 +21,25 @@ MEM_FILE = os.path.join(CAPTURE_DIR, "mem_usage.txt")
 PCAP_TCPDUMP = os.path.join(CAPTURE_DIR, "tcpdump_capture.pcap")
 PCAP_PTCPDUMP = os.path.join(CAPTURE_DIR, "ptcpdump_capture.pcap")
 
-print("🔍 Iniciando análisis de métricas integradas...")
+print("🔍 Iniciando análisis de métricas integradas por contenedor...")
 
 # =====================================
 # Función de verificación
 # =====================================
 def check_prerequisites():
-    """Verifica la existencia de archivos y la herramienta tshark."""
-    required_files = [CPU_FILE, MEM_FILE, PCAP_TCPDUMP, PCAP_PTCPDUMP]
-    
-    # 1. Verificar archivos
-    for file in required_files:
+    """Verifica pcap y tshark; métricas del host son opcionales."""
+    required_pcaps = [PCAP_TCPDUMP, PCAP_PTCPDUMP]
+    for file in required_pcaps:
         if not os.path.exists(file):
-            print(f"❌ Error: No se encontró el archivo requerido: {file}")
+            print(f"❌ Error: No se encontró el archivo de captura requerido: {file}")
             sys.exit(1)
 
-    # 2. Verificar tshark
+    # tshark
     try:
         subprocess.run("tshark -v", shell=True, check=True, capture_output=True)
     except subprocess.CalledProcessError:
         print("❌ Error: 'tshark' no está instalado o no está en el PATH.")
         sys.exit(1)
-    
     print("✅ Archivos y prerrequisitos verificados.")
 
 # =====================================
@@ -94,6 +91,33 @@ def analyze_system_metrics():
     return cpu_data, mem_data, cpu_mean, mem_mean
 
 # =====================================
+# 1.b Métricas por contenedor (docker stats)
+# =====================================
+def analyze_container_metrics():
+    """Lee CSVs de docker stats por contenedor y calcula promedios."""
+    TCP_CSV = os.path.join(CAPTURE_DIR, "tcpdump_container_stats.csv")
+    PTCP_CSV = os.path.join(CAPTURE_DIR, "ptcpdump_container_stats.csv")
+
+    def parse_csv(path):
+        if not os.path.exists(path):
+            return None, None
+        df = pd.read_csv(path)
+        # Limpieza de %
+        if 'cpu_perc' in df.columns:
+            df['cpu_perc'] = df['cpu_perc'].astype(str).str.replace('%','', regex=False)
+            df['cpu_perc'] = pd.to_numeric(df['cpu_perc'], errors='coerce')
+        if 'mem_perc' in df.columns:
+            df['mem_perc'] = df['mem_perc'].astype(str).str.replace('%','', regex=False)
+            df['mem_perc'] = pd.to_numeric(df['mem_perc'], errors='coerce')
+        avg_cpu = float(df['cpu_perc'].dropna().mean()) if 'cpu_perc' in df else 0.0
+        avg_mem = float(df['mem_perc'].dropna().mean()) if 'mem_perc' in df else 0.0
+        return df, {"cpu_avg": avg_cpu, "mem_avg": avg_mem}
+
+    df_tcp, avg_tcp = parse_csv(TCP_CSV)
+    df_ptcp, avg_ptcp = parse_csv(PTCP_CSV)
+    return (df_tcp, avg_tcp), (df_ptcp, avg_ptcp)
+
+# =====================================
 # 2. Análisis de Tráfico (TShark) - FUNCIÓN CORREGIDA
 # =====================================
 def get_tshark_stats(pcap_file):
@@ -118,7 +142,6 @@ def get_tshark_stats(pcap_file):
                 stats["packets"] = int(m.group(2))
                 stats["bytes"] = int(m.group(3))
                 break
-
         return stats
     except subprocess.CalledProcessError as e:
         print(f"❌ Error al ejecutar TShark. Revise el archivo. Error: {e.stderr.strip()}")
@@ -128,17 +151,60 @@ def get_tshark_stats(pcap_file):
         return {"packets": 0, "bytes": 0}
 
 # =====================================
+# 2.b Duración de captura (capinfos) y tasas
+# =====================================
+def get_capture_duration(pcap_file):
+    """Usa capinfos para obtener duración de captura en segundos (locale-agnostic)."""
+    try:
+        cmd = f"LC_ALL=C capinfos -a {pcap_file}"
+        res = subprocess.run(cmd, shell=True, capture_output=True, text=True, check=True)
+        for line in res.stdout.splitlines():
+            if 'Capture duration' in line:
+                # Ej: Capture duration: 67.208992 seconds
+                num = line.split(':',1)[1].strip().split()[0]
+                num = num.replace(',','.')
+                return float(num)
+    except Exception:
+        pass
+    # Fallback con tshark: io,stat,0 contiene 'Duration: X secs'
+    try:
+        cmd = f"tshark -r {pcap_file} -q -z io,stat,0"
+        res = subprocess.run(cmd, shell=True, capture_output=True, text=True, check=True)
+        for line in res.stdout.splitlines():
+            if 'Duration:' in line and 'secs' in line:
+                parts = line.strip().split()
+                # Buscar el número anterior a 'secs'
+                for i, tok in enumerate(parts):
+                    if tok.startswith('secs') and i>0:
+                        try:
+                            return float(parts[i-1].replace(',','.'))
+                        except Exception:
+                            break
+    except Exception:
+        pass
+    return 0.0
+
+# =====================================
 # Función Principal de Ejecución
 # =====================================
 def main():
     check_prerequisites()
     
-    # 1. Métricas de Sistema
+    # 1. Métricas de Sistema (opcionales, para contexto)
     cpu_data, mem_data, cpu_mean, mem_mean = analyze_system_metrics()
+
+    # 1.b Métricas por contenedor
+    (tcp_df, tcp_avg), (ptcp_df, ptcp_avg) = analyze_container_metrics()
 
     # 2. Métricas de Tráfico
     tshark_tcpdump = get_tshark_stats(PCAP_TCPDUMP)
     tshark_ptcpdump = get_tshark_stats(PCAP_PTCPDUMP)
+    dur_tcp = get_capture_duration(PCAP_TCPDUMP)
+    dur_ptcp = get_capture_duration(PCAP_PTCPDUMP)
+    pps_tcp = (tshark_tcpdump['packets']/dur_tcp) if dur_tcp > 0 else 0.0
+    pps_ptcp = (tshark_ptcpdump['packets']/dur_ptcp) if dur_ptcp > 0 else 0.0
+    bps_tcp = (tshark_tcpdump['bytes']/dur_tcp) if dur_tcp > 0 else 0.0
+    bps_ptcp = (tshark_ptcpdump['bytes']/dur_ptcp) if dur_ptcp > 0 else 0.0
     
     # 3. Tamaños de archivo
     size_tcpdump = os.path.getsize(PCAP_TCPDUMP)
@@ -153,7 +219,10 @@ def main():
         "Herramienta": ["tcpdump", "ptcpdump"],
         "Paquetes Total": [tshark_tcpdump['packets'], tshark_ptcpdump['packets']],
         "Bytes Netos (Payload)": [tshark_tcpdump['bytes'], tshark_ptcpdump['bytes']],
-        "Tamaño Archivo (KB)": [size_tcpdump / 1024, size_ptcpdump / 1024]
+        "Tamaño Archivo (KB)": [size_tcpdump / 1024, size_ptcpdump / 1024],
+        "Duración (s)": [dur_tcp, dur_ptcp],
+        "PPS": [pps_tcp, pps_ptcp],
+        "Bytes/s": [bps_tcp, bps_ptcp]
     }
     traffic_df = pd.DataFrame(traffic_data)
     print(traffic_df.to_string(index=False, float_format="%.2f"))
@@ -175,20 +244,16 @@ def main():
 
 
     # --- Promedio de Uso de Recursos ---
-    print("\n📊 4.2. Promedio de Uso de Recursos del Host (Overhead):")
-    if not cpu_mean.empty:
-        print("\n   - Uso de CPU (%):")
-        print(cpu_mean[["user", "system"]].round(2).to_string())
-    
-    if not mem_mean.empty:
-        # Derivar promedios en MB a partir de KB
-        mem_total_avg_kb = (mem_mean.get("kbmemfree", 0.0) + mem_mean.get("kbmemused", 0.0))
-        mem_used_avg_mb = mem_mean.get("kbmemused", 0.0) / 1024.0
-        mem_total_avg_mb = mem_total_avg_kb / 1024.0 if mem_total_avg_kb else 0.0
-
-        print("\n   - Uso de Memoria:")
-        print(f"     %memused (promedio): {mem_mean.get('%memused', 0.0):.2f} %")
-        print(f"     Mem usada (promedio): {mem_used_avg_mb:.2f} MB de {mem_total_avg_mb:.2f} MB")
+    print("\n📊 4.2. Promedio de Uso por Contenedor (Overhead por proceso):")
+    if tcp_avg and ptcp_avg:
+        cont_df = pd.DataFrame({
+            "Herramienta": ["tcpdump", "ptcpdump"],
+            "CPU Promedio (%)": [tcp_avg.get("cpu_avg", 0.0), ptcp_avg.get("cpu_avg", 0.0)],
+            "Memoria Promedio (%)": [tcp_avg.get("mem_avg", 0.0), ptcp_avg.get("mem_avg", 0.0)],
+        })
+        print(cont_df.to_string(index=False, float_format="%.2f"))
+    else:
+        print("ℹ️  No se encontraron CSVs de docker stats; ejecuta scripts/collect_metrics.sh durante la captura.")
 
 
     # --- Visualización de resultados ---
@@ -200,6 +265,33 @@ def main():
     plt.tight_layout()
     plt.savefig(os.path.join(CAPTURE_DIR, "pcap_size_comparison.png"))
     plt.close()
+
+    # Gráfico de PPS
+    plt.figure(figsize=(6, 4))
+    plt.bar(["tcpdump", "ptcpdump"], traffic_df["PPS"], color=["gray", "blue"])
+    plt.ylabel("Paquetes/s")
+    plt.title("Comparativa de tasa de paquetes")
+    plt.tight_layout()
+    plt.savefig(os.path.join(CAPTURE_DIR, "pps_comparison.png"))
+    plt.close()
+
+    # Gráfico CPU/Mem por contenedor
+    if tcp_avg and ptcp_avg:
+        plt.figure(figsize=(6,4))
+        plt.bar(["tcpdump", "ptcpdump"], [tcp_avg.get("cpu_avg",0.0), ptcp_avg.get("cpu_avg",0.0)], color=["gray","blue"])
+        plt.ylabel("CPU promedio (%)")
+        plt.title("Overhead CPU por contenedor")
+        plt.tight_layout()
+        plt.savefig(os.path.join(CAPTURE_DIR, "cpu_container_avg.png"))
+        plt.close()
+
+        plt.figure(figsize=(6,4))
+        plt.bar(["tcpdump", "ptcpdump"], [tcp_avg.get("mem_avg",0.0), ptcp_avg.get("mem_avg",0.0)], color=["gray","blue"])
+        plt.ylabel("Memoria promedio (%)")
+        plt.title("Overhead Memoria por contenedor")
+        plt.tight_layout()
+        plt.savefig(os.path.join(CAPTURE_DIR, "mem_container_avg.png"))
+        plt.close()
 
     # CPU usage over time
     if not cpu_data.empty:
@@ -231,17 +323,14 @@ def main():
         "metric": ["tcpdump", "ptcpdump"],
         "packets_total": [tshark_tcpdump['packets'], tshark_ptcpdump['packets']],
         "bytes_netos": [tshark_tcpdump['bytes'], tshark_ptcpdump['bytes']],
-        "pcap_size_kb": [size_tcpdump / 1024, size_ptcpdump / 1024]
+        "pcap_size_kb": [size_tcpdump / 1024, size_ptcpdump / 1024],
+        "duration_s": [dur_tcp, dur_ptcp],
+        "pps": [pps_tcp, pps_ptcp],
+        "bytes_per_s": [bps_tcp, bps_ptcp],
+        "cpu_avg": [tcp_avg.get("cpu_avg", 0.0), ptcp_avg.get("cpu_avg", 0.0)],
+        "mem_avg": [tcp_avg.get("mem_avg", 0.0), ptcp_avg.get("mem_avg", 0.0)],
     }
     df_summary = pd.DataFrame(results_summary)
-    
-    df_summary["cpu_user_avg"] = [cpu_mean.get("user", 0)] * 2
-    df_summary["cpu_system_avg"] = [cpu_mean.get("system", 0)] * 2
-    df_summary["mem_used_pct_avg"] = [mem_mean.get("%memused", 0.0)] * 2
-    # Añadir métricas de memoria en MB para claridad
-    mem_total_avg_kb = (mem_mean.get("kbmemfree", 0.0) + mem_mean.get("kbmemused", 0.0)) if not mem_mean.empty else 0.0
-    df_summary["mem_used_mb_avg"] = [mem_mean.get("kbmemused", 0.0) / 1024.0] * 2
-    df_summary["mem_total_mb_avg"] = [(mem_total_avg_kb / 1024.0) if mem_total_avg_kb else 0.0] * 2
     
     df_summary.to_csv(os.path.join(CAPTURE_DIR, "results_summary.csv"), index=False, float_format="%.2f")
 
