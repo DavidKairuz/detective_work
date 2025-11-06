@@ -2,17 +2,17 @@
 # ==============================================
 # Script: analyze_integrated_results.py
 # Descripción:
-#   Analiza las métricas de rendimiento del host (CPU, Memoria) 
-#   y las métricas de tráfico de red (Paquetes, Bytes, Tamaño de archivo)
-#   para comparar la eficiencia y la carga de datos entre ptcpdump y tcpdump.
+#   Analiza las métricas de tráfico de red (Paquetes, Bytes, Tamaño de archivo)
+#   y las métricas de contenedor (CPU, Memoria) para comparar la eficiencia
+#   entre ptcpdump y tcpdump.
 # ==============================================
 
 import os
 import pandas as pd
-import matplotlib.pyplot as plt
 import subprocess
 import sys
 import re
+import matplotlib.pyplot as plt  # Solo para gráficos esenciales
 
 # Rutas de los archivos generados por la captura
 CAPTURE_DIR = "./captures"
@@ -277,51 +277,9 @@ def main():
     plt.savefig(os.path.join(CAPTURE_DIR, "pcap_size_comparison.png"))
     plt.close()
 
-    # Gráfico de PPS
-    plt.figure(figsize=(6, 4))
-    plt.bar(["tcpdump", "ptcpdump"], traffic_df["PPS"], color=["gray", "blue"])
-    plt.ylabel("Paquetes/s")
-    plt.title("Comparativa de tasa de paquetes")
-    plt.tight_layout()
-    plt.savefig(os.path.join(CAPTURE_DIR, "pps_comparison.png"))
-    plt.close()
-
-    # Gráfico CPU/Mem por contenedor
-    if tcp_avg and ptcp_avg:
-        plt.figure(figsize=(6,4))
-        plt.bar(["tcpdump", "ptcpdump"], [tcp_avg.get("cpu_avg",0.0), ptcp_avg.get("cpu_avg",0.0)], color=["gray","blue"])
-        plt.ylabel("CPU promedio (%)")
-        plt.title("Overhead CPU por contenedor")
-        plt.tight_layout()
-        plt.savefig(os.path.join(CAPTURE_DIR, "cpu_container_avg.png"))
-        plt.close()
-
-        plt.figure(figsize=(6,4))
-        plt.bar(["tcpdump", "ptcpdump"], [tcp_avg.get("mem_avg",0.0), ptcp_avg.get("mem_avg",0.0)], color=["gray","blue"])
-        plt.ylabel("Memoria promedio (%)")
-        plt.title("Overhead Memoria por contenedor")
-        plt.tight_layout()
-        plt.savefig(os.path.join(CAPTURE_DIR, "mem_container_avg.png"))
-        plt.close()
-
-    # Series temporales CPU/Mem por contenedor
+    # Series temporales CPU/Mem por contenedor (eliminados otros gráficos menos relevantes)
     if tcp_df is not None and ptcp_df is not None:
         if not (tcp_df.empty or ptcp_df.empty):
-            # CPU
-            plt.figure(figsize=(8,4))
-            if 'time_s' in tcp_df.columns and 'cpu_perc' in tcp_df.columns:
-                plt.plot(tcp_df['time_s'], tcp_df['cpu_perc'], label='tcpdump CPU %', color='gray')
-            if 'time_s' in ptcp_df.columns and 'cpu_perc' in ptcp_df.columns:
-                plt.plot(ptcp_df['time_s'], ptcp_df['cpu_perc'], label='ptcpdump CPU %', color='blue')
-            plt.xlabel('Tiempo (s)')
-            plt.ylabel('Uso de CPU (%)')
-            plt.title('Uso de CPU: Comparativa entre Contenedores Sniffer')
-            plt.legend()
-            plt.tight_layout()
-            plt.savefig(os.path.join(CAPTURE_DIR, 'cpu_timeseries.png'))
-            plt.close()
-
-            # Memoria
             plt.figure(figsize=(8,4))
             if 'time_s' in tcp_df.columns and 'mem_perc' in tcp_df.columns:
                 plt.plot(tcp_df['time_s'], tcp_df['mem_perc'], label='tcpdump Memoria %', color='gray')
@@ -334,32 +292,7 @@ def main():
             plt.tight_layout()
             plt.savefig(os.path.join(CAPTURE_DIR, 'mem_timeseries.png'))
             plt.close()
-
-    # CPU usage over time
-    if not cpu_data.empty:
-        plt.figure(figsize=(8, 4))
-        plt.plot(cpu_data["time"], cpu_data["user"], label="User", linewidth=1.2)
-        plt.plot(cpu_data["time"], cpu_data["system"], label="System", linewidth=1.2)
-        plt.xlabel("Tiempo (s)")
-        plt.ylabel("Uso de CPU (%)")
-        plt.title("Evolución del uso de CPU durante la captura")
-        plt.legend()
-        plt.tight_layout()
-        plt.savefig(os.path.join(CAPTURE_DIR, "cpu_usage_plot.png"))
-        plt.close()
-
-    # Memory usage over time
-    if not mem_data.empty:
-        plt.figure(figsize=(8, 4))
-        plt.plot(mem_data["time"], mem_data["%memused"], label="% Memoria usada", color="orange", linewidth=1.2)
-        plt.xlabel("Tiempo (s)")
-        plt.ylabel("Uso de Memoria (%)")
-        plt.title("Evolución del uso de memoria durante la captura")
-        plt.legend()
-        plt.tight_layout()
-        plt.savefig(os.path.join(CAPTURE_DIR, "mem_usage_plot.png"))
-        plt.close()
-
+            
     # --- Exportar resumen ---
     results_summary = {
         "metric": ["tcpdump", "ptcpdump"],
