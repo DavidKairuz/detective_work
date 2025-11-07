@@ -5,18 +5,22 @@ services:
   traffic-generator:
     image: alpine:latest
     container_name: traffic-generator
-    command: >
-      sh -c "
-        apk add --no-cache iperf3 netcat-openbsd;
-        echo '===> Iniciando generador de tráfico';
-        while true; do
-          echo '>>> Enviando tráfico TCP al backend:5000';
-          echo 'pingTCP $(date)' | nc backend 5000 || true;
-          echo '>>> Enviando tráfico UDP al backend:5001';
-          echo 'pingUDP $(date)' | nc -u -w1 backend 5001 || true;
-          sleep 3;
-        done
-      "
+    command: |
+      /bin/sh -c 'while true; do
+          # TCP - Enviar 3 mensajes
+          echo "[TCP] Enviando mensajes..."
+          for num in 1 2 3; do
+              echo "TCP-DATA-$$(date +%s)-$$num" | nc backend 5000 || true
+          done
+          
+          # UDP - Enviar 3 mensajes
+          echo "[UDP] Enviando mensajes..."
+          for num in 1 2 3; do
+              echo "UDP-DATA-$$(date +%s)-$$num" | nc -u -w1 backend 5001 || true
+          done
+          
+          sleep 1
+      done'
     networks:
       - net-test
 
@@ -54,6 +58,16 @@ services:
     cap_add:
       - NET_ADMIN
       - NET_RAW
+      # === AÑADIR ESTA SECCIÓN ===
+    deploy:
+      resources:
+        limits:
+          memory: 750M # Límite máximo de memoria (256 Megabytes)
+          cpus: '1'  # Límite máximo de CPU (equivalente a 0.5 núcleos)
+        #reservations:
+        #  memory: 128M # Memoria reservada/garantizada (128 Megabytes)
+        #  cpus: '0.25' # CPU reservada/garantizada (25% de un núcleo)
+    # ==========================
 
   # 📡 Pod 4: Sniffer con tcpdump estándar
   tcpdump-sniffer:
@@ -71,6 +85,16 @@ services:
     cap_add:
       - NET_ADMIN
       - NET_RAW
+      # === AÑADIR ESTA SECCIÓN ===
+    deploy:
+      resources:
+        limits:
+          memory: 750M # Límite máximo de memoria (512 Megabytes)
+          cpus: '1'  # Límite máximo de CPU (equivalente a 0.5 núcleos)
+        #reservations:
+       #   memory: 128M # Memoria reservada/garantizada (128 Megabytes)
+        #  cpus: '0.25' # CPU reservada/garantizada (25% de un núcleo)
+    # ==========================
 
 networks:
   net-test:
