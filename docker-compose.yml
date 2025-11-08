@@ -1,5 +1,3 @@
-#version: "3.9"
-
 services:
   # 🧩 Pod 1: Generador de tráfico TCP/UDP
   traffic-generator:
@@ -62,12 +60,9 @@ services:
     deploy:
       resources:
         limits:
-          memory: 750M # Límite máximo de memoria (256 Megabytes)
-          cpus: '1'  # Límite máximo de CPU (equivalente a 0.5 núcleos)
-        #reservations:
-        #  memory: 128M # Memoria reservada/garantizada (128 Megabytes)
-        #  cpus: '0.25' # CPU reservada/garantizada (25% de un núcleo)
-    # ==========================
+          memory: 750M # Límite máximo de memoria
+          cpus: '1'  # Límite máximo de CPU
+       
 
   # 📡 Pod 4: Sniffer con tcpdump estándar
   tcpdump-sniffer:
@@ -89,12 +84,9 @@ services:
     deploy:
       resources:
         limits:
-          memory: 750M # Límite máximo de memoria (512 Megabytes)
-          cpus: '1'  # Límite máximo de CPU (equivalente a 0.5 núcleos)
-        #reservations:
-       #   memory: 128M # Memoria reservada/garantizada (128 Megabytes)
-        #  cpus: '0.25' # CPU reservada/garantizada (25% de un núcleo)
-    # ==========================
+          memory: 750M # Límite máximo de memoria
+          cpus: '1'  # Límite máximo de CPU
+      
 
 networks:
   net-test:
