@@ -3,3 +3,5 @@
 *.png
 *.pcap
 *.csv
+captures/capture_end_time
+captures/capture_start_time
